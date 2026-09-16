@@ -39,7 +39,7 @@ export default function AuthPage() {
           navigate("/reviewer-portal");
           break;
         case "admin":
-          navigate("/user-portal");
+          navigate("/admin-portal");
           break;
       }
     });

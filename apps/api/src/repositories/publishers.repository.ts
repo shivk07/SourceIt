@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { schema } from "@sourceit/shared";
 import type { db as Db } from "../db";
 
@@ -51,9 +51,11 @@ export function createPublishersRepository(db: typeof Db) {
       await db.insert(schema.publisherMembers).values(input);
     },
 
-    // The admin verification queue — keyset-paginated on `id`.
+    // The admin verification queue — keyset-paginated on `id`. Takes one or more
+    // statuses since a freshly-registered publisher starts at `unverified` and
+    // nothing moves it to `pending` on its own — the queue needs both to catch it.
     async listByStatus(
-      status: "unverified" | "pending" | "verified" | "rejected",
+      status: Array<"unverified" | "pending" | "verified" | "rejected">,
       cursor: string | undefined,
       limit: number,
     ) {
@@ -61,7 +63,7 @@ export function createPublishersRepository(db: typeof Db) {
       const rows = await db
         .select()
         .from(schema.publishers)
-        .where(and(eq(schema.publishers.verificationStatus, status), cursorFilter))
+        .where(and(inArray(schema.publishers.verificationStatus, status), cursorFilter))
         .orderBy(asc(schema.publishers.id))
         .limit(limit + 1);
       const items = rows.slice(0, limit);

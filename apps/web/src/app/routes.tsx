@@ -8,6 +8,7 @@ import ArticleEditHistory from "./pages/ArticleEditHistory";
 import UserPortal from "./pages/UserPortal";
 import VerificationResult from "./pages/VerificationResult";
 import SavedArticles from "./pages/SavedArticles";
+import AdminPortal from "./pages/AdminPortal";
 
 export const router = createBrowserRouter([
   {
@@ -54,5 +55,9 @@ export const router = createBrowserRouter([
   {
     path: "/article-edit-history",
     Component: ArticleEditHistory,
+  },
+  {
+    path: "/admin-portal",
+    Component: AdminPortal,
   },
 ]);

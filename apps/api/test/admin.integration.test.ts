@@ -64,13 +64,15 @@ describe("Admin decision queues", () => {
       expect(res.json()).toMatchObject({ code: "FORBIDDEN" });
     });
 
-    it("returns only pending publishers to an admin", async () => {
+    it("returns pending and unverified publishers to an admin", async () => {
       const res = await ctx.app.inject({ method: "GET", url: "/publishers/pending-verification", headers: auth(adminToken) });
       expect(res.statusCode).toBe(200);
       const statuses = res.json().items.map((p: { verificationStatus: string }) => p.verificationStatus);
       expect(statuses.length).toBeGreaterThan(0);
-      expect(new Set(statuses)).toEqual(new Set(["pending"]));
-      expect(res.json().items.map((p: { id: string }) => p.id)).toContain(pendingPublisherId);
+      expect(new Set(statuses)).toEqual(new Set(["pending", "unverified"]));
+      const ids = res.json().items.map((p: { id: string }) => p.id);
+      expect(ids).toContain(pendingPublisherId);
+      expect(ids).toContain(unverifiedPublisherId);
     });
   });
 

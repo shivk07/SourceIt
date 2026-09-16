@@ -66,7 +66,7 @@ export function createAdminService(
   return {
     async listPendingPublishers(actor: Actor, cursor: string | undefined, limit: number) {
       await authz.assertCan(actor, { type: "admin" });
-      const { items, nextCursor } = await publishersRepo.listByStatus("pending", cursor, limit);
+      const { items, nextCursor } = await publishersRepo.listByStatus(["unverified", "pending"], cursor, limit);
       return { items: items.map(toApiPublisher), nextCursor };
     },
 

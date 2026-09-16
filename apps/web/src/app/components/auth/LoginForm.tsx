@@ -44,7 +44,7 @@ export default function LoginForm() {
         navigate("/reviewer-portal");
         break;
       case "admin":
-        navigate("/user-portal");
+        navigate("/admin-portal");
         break;
     }
   }

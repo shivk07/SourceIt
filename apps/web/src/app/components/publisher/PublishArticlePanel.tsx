@@ -95,7 +95,7 @@ export default function PublishArticlePanel({
     setIsSubmitting(false);
 
     if (error || !data) {
-      toast.error("Something went wrong publishing this article");
+      toast.error(error?.code === "FORBIDDEN" ? error.message : "Something went wrong publishing this article");
       return;
     }
 

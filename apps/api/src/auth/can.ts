@@ -95,7 +95,7 @@ export function createAuthorization(
 function describeDenial(action: Action): string {
   switch (action.type) {
     case "article:submit":
-      return "Only a member of a verified publisher can submit an article for publication";
+      return "You must be a verified publisher to submit articles for publication";
     case "review:create":
       return "Only an approved reviewer with no affiliation to this publisher can review its articles";
     case "dispute:file":

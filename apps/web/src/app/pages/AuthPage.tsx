@@ -9,6 +9,7 @@ import LoginForm from "../components/auth/LoginForm";
 import RegisterForm from "../components/auth/RegisterForm";
 import { motion } from "motion/react";
 import { useApiClient } from "../lib/apiClient";
+import { portalFor } from "../lib/roles";
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -28,20 +29,7 @@ export default function AuthPage() {
         setOrphanSession(true);
         return;
       }
-      switch (data.account.role) {
-        case "reader":
-          navigate("/user-portal");
-          break;
-        case "publisher":
-          navigate("/publisher-portal");
-          break;
-        case "reviewer":
-          navigate("/reviewer-portal");
-          break;
-        case "admin":
-          navigate("/admin-portal");
-          break;
-      }
+      navigate(portalFor[data.account.role]);
     });
   }, [isLoaded, isSignedIn, api, navigate]);
 

@@ -31,11 +31,12 @@ export default function PublisherPortal() {
         setMeError("Signed in, but no SourceIt account exists for this session yet");
         return;
       }
-      if (data.publisherIds.length === 0) {
+      const [firstPublisherId] = data.publisherIds;
+      if (!firstPublisherId) {
         setMeError("This account isn't a member of any publisher yet");
         return;
       }
-      setPublisherId(data.publisherIds[0]);
+      setPublisherId(firstPublisherId);
     });
   }, [api]);
 

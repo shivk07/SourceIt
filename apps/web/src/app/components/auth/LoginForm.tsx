@@ -23,6 +23,7 @@ export default function LoginForm() {
   const [code, setCode] = useState("");
 
   async function completeSignIn(sessionId: string) {
+    if (!isLoaded) return;
     await setActive({ session: sessionId });
 
     const { data: me, error } = await api.GET("/me");

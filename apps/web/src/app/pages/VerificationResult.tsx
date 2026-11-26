@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Bookmark, Share2, AlertCircle, Menu } from "lucide-react";
+import { ArrowLeft, Bookmark, Share2, AlertCircle, Menu, SearchX } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Skeleton } from "../components/ui/skeleton";
 import UserSidebar from "../components/user/UserSidebar";
 import TrustSummaryCard from "../components/verification/TrustSummaryCard";
 import VersionHistory from "../components/verification/VersionHistory";
@@ -15,6 +16,12 @@ import type { components } from "@sourceit/shared/client";
 
 type VerificationResultData = components["schemas"]["VerificationResult"];
 
+type LoadState =
+  | { status: "loading" }
+  | { status: "loaded"; result: VerificationResultData }
+  | { status: "notfound" }
+  | { status: "error" };
+
 // One composed call — GET /articles/{id}/verification returns the article, its
 // current version + full history, evidence, reviewer notes, the publisher (with
 // the derived credibility score / transparency level), the anchor record, any
@@ -26,28 +33,48 @@ export default function VerificationResult() {
   const { articleId } = useParams();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [result, setResult] = useState<VerificationResultData | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [load, setLoad] = useState<LoadState>({ status: "loading" });
+  // Bumped by the error state's "Try again" button to re-run the fetch.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!articleId) return;
-    setLoadError(null);
-    setResult(null);
+    // Aborting on cleanup cancels the in-flight request when the id changes
+    // (or the page unmounts), so a slow earlier response can never overwrite
+    // the article the user is now looking at.
+    const controller = new AbortController();
+    setLoad({ status: "loading" });
 
     publicApiClient
-      .GET("/articles/{articleId}/verification", { params: { path: { articleId } } })
-      .then(({ data, error }) => {
-        if (error || !data) {
-          setLoadError("This article is not registered in SourceIt's verification system");
-          return;
-        }
-        setResult(data);
+      .GET("/articles/{articleId}/verification", {
+        params: { path: { articleId } },
+        signal: controller.signal,
+      })
+      .then(({ data, response }) => {
+        if (controller.signal.aborted) return;
+        if (data) setLoad({ status: "loaded", result: data });
+        else if (response.status === 404) setLoad({ status: "notfound" });
+        else setLoad({ status: "error" });
+      })
+      .catch(() => {
+        // A cancelled request rejects too; that's expected, not a failure.
+        if (!controller.signal.aborted) setLoad({ status: "error" });
       });
-  }, [articleId]);
 
-  const subtitle = articleId
-    ? loadError ?? result?.currentVersion.headline ?? "Loading…"
-    : "Climate Change Impact on Global Agriculture";
+    return () => controller.abort();
+  }, [articleId, attempt]);
+
+  const result = articleId && load.status === "loaded" ? load.result : null;
+
+  const subtitle = !articleId
+    ? "Climate Change Impact on Global Agriculture"
+    : load.status === "loaded"
+      ? load.result.currentVersion.headline
+      : load.status === "loading"
+        ? "Loading…"
+        : load.status === "notfound"
+          ? "Article not found"
+          : "Couldn't load verification";
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -115,10 +142,31 @@ export default function VerificationResult() {
 
         {/* Content Area */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
-          {articleId && loadError ? (
+          {articleId && load.status === "loading" ? (
+            <div role="status" aria-label="Loading verification" className="space-y-6">
+              <Skeleton className="h-48 w-full" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Skeleton className="h-64 w-full" />
+                <Skeleton className="h-64 w-full" />
+              </div>
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : articleId && load.status === "notfound" ? (
             <div className="rounded-lg border-2 border-dashed border-slate-300 bg-white p-12 text-center">
+              <SearchX className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+              <p className="text-slate-900 font-medium">
+                This article is not registered in SourceIt's verification system
+              </p>
+              <p className="text-sm text-slate-600 mt-1">Check the link or article ID and try again.</p>
+            </div>
+          ) : articleId && load.status === "error" ? (
+            <div role="alert" className="rounded-lg border-2 border-dashed border-red-200 bg-white p-12 text-center">
               <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
-              <p className="text-slate-900 font-medium">{loadError}</p>
+              <p className="text-slate-900 font-medium">We couldn't load this verification</p>
+              <p className="text-sm text-slate-600 mt-1">Something went wrong on our side or with your connection.</p>
+              <Button variant="outline" className="mt-4" onClick={() => setAttempt((n) => n + 1)}>
+                Try again
+              </Button>
             </div>
           ) : (
             <>

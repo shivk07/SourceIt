@@ -1,66 +1,67 @@
 # SourceIt — Project State
-**Last updated:** end of Sprint 18  ·  **Current phase:** build-prompt phases done (0–5) — now on the real external integrations
+**Last updated:** end of Sprint 19  ·  **Current phase:** build-prompt phases done (0–5) — real external integrations built; frontend hardening
 
-> **Sprints 0–17 are committed and pushed to `origin/main`; CI on GitHub is
-> green** (`pnpm install --frozen-lockfile` / `lint` / `typecheck` / `test`, the
-> full Testcontainers-backed suite, on a clean `ubuntu-latest` runner).
-> **Sprint 18 is awaiting commit** — the working tree holds it.
+> **Everything through Sprint 18, plus the frontend commits that followed it,
+> is committed and pushed to `origin/main`** (latest pushed: `3c5b73a`). CI was
+> last confirmed green on 2026-09-10; the status of later runs hasn't been
+> re-checked from this environment (no `gh` CLI here).
+> **Sprint 19 is awaiting commit** — the working tree holds it.
 
 ## Resume here
 
-**The real `SourceArchiver` (SSRF-guarded) is built** (Sprint 18) — the last of
-the three named fakes from the build prompt's "Third-party systems in scope"
-(after the chain provider in Sprint 16 and the object store in Sprint 17).
-`createGuardedSourceArchiver` (`apps/api/src/storage/sourceArchiver.ts`) is now
-`apps/api`'s default `SourceArchiver` (env-unconditional — no credentials to
-provision, unlike the chain RPC or the bucket): for `tag=source` evidence, it
-resolves the given URL's host, rejects it if any resolved address (or a
-redirect target's) is private/loopback/link-local/CGNAT/multicast/metadata —
-including `169.254.169.254` and an IPv4-mapped-IPv6 literal — and only then
-fetches, over a socket forced to the pre-validated address (closing the
-DNS-rebinding gap between the check and the connect). Only `http:`/`https:`;
-redirects are followed manually and re-validated per hop (max 5); the body is
-capped at 25 MB; each hop times out at 15s. `docs/THREAT_MODEL.md`'s SSRF row
-is now Closed.
+**`apps/web` is type-checked and tested** (Sprint 19). It now has a
+`tsconfig.json` (same strictness as the backend packages), a Vitest + jsdom +
+Testing Library setup, and `typecheck` / `test` scripts that are part of the
+root `pnpm typecheck` / `pnpm test` chains. `tsc` was 0 errors after fixing
+two real ones (`LoginForm.tsx`'s unguarded `setActive`, `PublisherPortal.tsx`'s
+unchecked `publisherIds[0]`). `src/imports` (a pasted design brief saved as
+`.tsx`) is excluded. See [SPRINT_19_REPORT.md](sprints/SPRINT_19_REPORT.md).
 
-- **Tests keep the deterministic fake.** `apps/api/test/testApp.ts` now passes
-  `sourceArchiver: createFakeSourceArchiver()` explicitly (previously this was
-  just `app.ts`'s unconfigured default) — the integration suite has no network
-  access and `evidence.integration.test.ts` asserts the fake's exact
-  `archived-snapshot:<url>` bytes. Same substitution reasoning as
-  `verifySession` in that file.
-- **New `apps/api/test/sourceArchiver.unit.test.ts` — 40/40, no DB, no
-  network.** `isBlockedAddress` against 18 blocked / 7 allowed literal
-  addresses (private ranges, loopback, link-local, CGNAT, multicast, the
-  metadata IP, an IPv4-mapped-IPv6 loopback, and a garbage string failing
-  closed); the redirect/size-cap/status orchestration against injected fake
-  `resolveAddresses`/`performHop`; the real single-hop transport
-  (`nodeHttpPerformHop`, exported for this) against a real local
-  `http.createServer()` — byte/status/content-type passthrough, a declared
-  oversized `Content-Length` rejected before the body is read, a streamed
-  body over the cap aborted mid-transfer, and a timeout on a server that never
-  responds.
-- **Node's `net.BlockList` needed care.** Adding an `"ipv6"` rule for
-  `::ffff:0:0/96` (to reject IPv4-mapped IPv6) was tried and — verified
-  directly, empirically, against a running Node process — made `check(addr,
-  "ipv4")` return `true` for *every* plain IPv4 address, including public
-  ones, once any `"ipv6"` rule existed alongside the `"ipv4"` ones. Dropped
-  that rule entirely: `BlockList` already cross-checks an IPv4-mapped IPv6
-  literal against the `"ipv4"` rules when checked as `"ipv6"`, confirmed with
-  the same kind of direct check, so nothing else was needed.
-- **`http.request`'s custom `lookup` option is called with `options.all:
-  true`** (Happy Eyeballs) and expects an array of `{ address, family }` back,
-  not the single-address positional form — the first working version passed a
-  bare address and failed every real request with a confusing "Invalid IP
-  address: undefined"; caught by the `nodeHttpPerformHop` tests against a real
-  server, not by the orchestration tests (which never reach real `http`).
-- **Not run this session:** the full DB-backed `@sourceit/api` integration
-  suite (would need rebuilding the embedded-postgres workaround from Sprint
-  11's notes; none was running here). The change to that suite is a like-for-
-  like substitution (the fake was already the default `sourceArchiver` before
-  this sprint), typecheck and lint are clean across all five packages, and the
-  40 new unit tests fully exercise the new module in isolation — but the
-  previously-verified 208/208 `apps/api` count is not re-confirmed here.
+- **Verification page states.** `/verification-result/:articleId` now has
+  loading (skeletons), not-found (404), and error (other status or a failed
+  request, with **Try again**) states. Fixed a real bug: while loading, every
+  panel used to fall back to its mock, briefly showing a made-up article as
+  the real result. Each request is aborted when the id changes or the page
+  unmounts, and a late response after an abort is ignored.
+- **Route guard with roles** (`components/auth/RequireAuth.tsx`). One
+  path-less `RequireAuth` layout route wraps all six signed-in pages: it checks
+  the Clerk session, looks the role up from `/me` once per signed-in visit, and
+  passes it to `RequireRole` groups via outlet context. Reader →
+  `/user-portal`, `/saved-articles`; publisher → `/publisher-portal`,
+  `/article-edit-history`; reviewer → `/reviewer-portal`; admin → every portal.
+  Signed out or session expired → `/`; wrong role → own portal; Clerk session
+  with no SourceIt account (`/me` 401) → `/`; lookup failure → error with
+  **Try again**. The role → portal map lives in `lib/roles.ts`, shared with
+  `AuthPage.tsx`.
+- **23/23 `apps/web` tests**, each guard/cancellation behaviour also checked
+  against deliberate breakage. `vite build` succeeds; root `eslint` re-run clean
+  (the lockfile change moved `typescript-eslint`'s TypeScript peer to 5.7.2).
+- **Root `pnpm typecheck` verified through pnpm** (all six packages, 0 errors).
+  **Not run this session:** the backend packages' tests and the root
+  `pnpm test` chain (need Postgres) — no backend code changed.
+
+Before Sprint 19: **the real `SourceArchiver` (SSRF-guarded)** (Sprint 18) —
+the last of the three named fakes. `createGuardedSourceArchiver`
+(`apps/api/src/storage/sourceArchiver.ts`) is `apps/api`'s unconditional
+default: for `tag=source` evidence it resolves the host, rejects the request if
+any resolved address (or any redirect target's) is
+private/loopback/link-local/CGNAT/multicast/metadata — including
+`169.254.169.254` and IPv4-mapped-IPv6 — then fetches over a socket forced to
+the pre-validated address (closing DNS rebinding). `http:`/`https:` only;
+redirects followed by hand and re-validated per hop (max 5); 25 MB body cap;
+15s per-hop timeout. `test/testApp.ts` pins the deterministic fake explicitly;
+40 standalone unit tests cover the module. Two Node behaviours were verified
+empirically before being relied on (`net.BlockList`'s IPv4-mapped handling,
+`http.request`'s `lookup` called with `all: true`) — details in
+[SPRINT_18_REPORT.md](sprints/SPRINT_18_REPORT.md). The full DB-backed
+`apps/api` suite (208/208 as of Sprint 17) was not re-run in Sprint 18.
+
+Between Sprint 18 and Sprint 19, **frontend commits landed without a sprint
+report**: the publisher dashboard wired to real backend data, Clerk sign-out
+fixes, `react-hook-form` ref forwarding, signed-in users redirected away from
+the landing page, article-rejection reasons surfaced, the admin screen and
+publisher verification queue, and the worker as a scheduled one-shot instead of
+an always-on loop. Their details live in the git history only.
 
 Before Sprint 18: **evidence files are real** (Sprint 17). With `OBJECT_STORE_BUCKET` set, `apps/api`
 stores evidence bytes in a real S3-compatible bucket (AWS S3, R2, B2, MinIO —
@@ -165,10 +166,10 @@ column is still never written.
 code (chain, object store, source archiver) — what remains is running two of
 them live: the Sprint 16 chain provider's **live testnet run** (deploy the
 contract + fund a key), and exercising a real bucket end to end (no cloud
-account/credentials in this environment). The build-prompt phases are done and
-CI is green.
+account/credentials in this environment). The build-prompt phases are done; CI
+was last confirmed green on 2026-09-10.
 
-Still mock / unbuilt, deliberately or blocked, after Sprint 18:
+Still mock / unbuilt, deliberately or blocked, after Sprint 19:
 
 - **No real bucket provisioned or exercised end to end** — no cloud
   account/credentials in this environment. The store's logic (signing,
@@ -203,11 +204,12 @@ Still mock / unbuilt, deliberately or blocked, after Sprint 18:
   documented in `THREAT_MODEL.md`'s residual-risk list, not treated as a gap.
 - **No admin re-queue for `anchor_failed`** — terminal since Sprint 4; manual
   SQL recovery in `RUNBOOK.md`.
-- **The publisher-dashboard + reader frontend components are hardcoded** and not
-  wired (`AnalyticsCards`, `CredibilityPanel`, `RecentActivity`,
-  `PublisherProfileCard`, `ReviewsDisputes`, `SavedArticles.tsx`,
-  `TrustedPublishers.tsx`, `RecentlyVerified.tsx`, `UserStats.tsx`) — the build
-  prompt forbade restructuring them; revisit that constraint.
+- **The reader-side frontend components are still hardcoded** and not wired
+  (`SavedArticles.tsx`, `TrustedPublishers.tsx`, `RecentlyVerified.tsx`,
+  `UserStats.tsx`). The publisher-dashboard components (`AnalyticsCards`,
+  `CredibilityPanel`, `RecentActivity`, `PublisherProfileCard`,
+  `ReviewsDisputes`) and `AdminPortal.tsx` now call the API (post-Sprint-18
+  commits).
 - **No real Clerk Organization** — `publishers.clerk_org_id` is a
   `local_org_<uuid>` placeholder; `publisher_members` is our own table.
 - **`activity_events` covers only the `apps/api` write paths** — no `blockchain`
@@ -221,6 +223,12 @@ Still mock / unbuilt, deliberately or blocked, after Sprint 18:
 - **No dispute frontend**; **no reviewer-facing write UI** (`ReviewerPortal.tsx`
   is a stub).
 - **No backend search endpoint.**
+- **`apps/web` is not in the root `lint` chain** — adding it would likely
+  surface its own batch of lint issues.
+- **No "your session expired" message** — an expired session redirects to `/`
+  silently; Clerk's `useAuth` alone doesn't distinguish expiry from sign-out.
+- **A role changed mid-visit takes effect on next login or reload** — the guard
+  looks the role up once per signed-in visit.
 
 ## Sprint ledger
 
@@ -245,6 +253,7 @@ Still mock / unbuilt, deliberately or blocked, after Sprint 18:
 | 16 | Real chain AnchorProvider: `@sourceit/anchoring-contract` (Anchor.sol + artifact), viem-backed `createChainAnchorProvider` in the worker, env-selected; live testnet run pending | Complete with carryover | [SPRINT_16_REPORT.md](sprints/SPRINT_16_REPORT.md) |
 | 17 | Real ObjectStore: S3-compatible `s3ObjectStore.ts`, env-selected; new public `GET /versions/{id}/evidence/{evidenceId}/file` signed-URL redirect; "View File" wired | Complete with carryover | [SPRINT_17_REPORT.md](sprints/SPRINT_17_REPORT.md) |
 | 18 | Real SourceArchiver: SSRF-guarded `createGuardedSourceArchiver` (DNS-resolve + IP-block-list + forced-address connect + manual redirect re-validation), now the default; fake pinned explicitly in tests | Complete with carryover | [SPRINT_18_REPORT.md](sprints/SPRINT_18_REPORT.md) |
+| 19 | `apps/web` type-checked + tested (tsconfig, Vitest, root chains); verification page loading/not-found/error states + request cancellation; role-checked route guard for signed-in pages | Complete | [SPRINT_19_REPORT.md](sprints/SPRINT_19_REPORT.md) |
 
 ## Current domain model
 
@@ -397,6 +406,15 @@ Append-only. Load-bearing entries kept; sprint reports carry the rest.
   integration suite. `http:`/`https:` only; 25 MB body cap; 15s per-hop timeout;
   5 redirects max, every hop re-validated identically to the first (scheme,
   DNS-resolve, address-block-check) before it's fetched.
+- 2026-11-25 — Web route guard (Sprint 19): signed-in pages check the session
+  **and the role**; **admins may open every portal**; other roles are sent to
+  their own portal. The role is **looked up once per signed-in visit** (one
+  `RequireAuth` layout route over every guarded page, `RequireRole` groups
+  inside it), re-looked-up when the Clerk `userId` changes. `/`,
+  `/verification-result[/:articleId]`, `/simple-login` and `/reader-portal`
+  stay unguarded. Confirmed with the user.
+- 2026-11-25 — `apps/web` type-checked at the backend packages' strictness;
+  `typecheck` and `test` join the root chains; `lint` does not yet.
 
 ## Open questions
 
@@ -478,8 +496,17 @@ Append-only. Load-bearing entries kept; sprint reports carry the rest.
   attaches one by habit.
 - **`articles.repository.ts` cursor pagination keys on a millisecond-truncated
   `created_at`** (`listPublishedVersions`, `listForPublisher`).
-- **`apps/web` has no `tsconfig.json`** (Figma Make export); `vite build` is its
-  only standing check.
+- **`apps/web/src/imports/pasted_text/publisher-dashboard.tsx` is a design
+  brief, not code** — excluded from `apps/web`'s `tsconfig.json` rather than
+  renamed to `.md`.
+- **`apps/web` uses no `baseUrl`** — VS Code's bundled TypeScript 6 reports it
+  as deprecated; `paths` alone works under `moduleResolution: "Bundler"`.
+- **`LoginForm.tsx` keeps its own role → portal `switch`** instead of
+  `lib/roles.ts` (Sprint 19 kept its type fix minimal).
+- **The Sprint 19 lockfile re-resolved some existing entries** — several UI
+  packages now resolve against `@types/react@18.3.0` (previously a stray
+  19.2.18) and the root `typescript-eslint` peers on TypeScript 5.7.2 (was
+  5.9.3). Root lint re-verified clean.
 - **`apps/worker` duplicates `apps/api`'s `startTestDb` + pool setup** (~30
   lines).
 - **`docs/ANCHORING.md`'s leaf-order rule is enforced by `ORDER BY`, not a
@@ -490,14 +517,14 @@ Append-only. Load-bearing entries kept; sprint reports carry the rest.
 
 ## How to run
 
-Confirmed working this sprint (against a real PostgreSQL 16.14 via
+Backend commands last confirmed against a real PostgreSQL 16.14 (via
 `initdb`/`pg_ctl` on a non-temp path — Docker unavailable, `embedded-postgres`
-binaries blocked from `%TEMP%`; `apps/web` via `vite build`):
+binaries blocked from `%TEMP%`); `apps/web` commands confirmed in Sprint 19:
 
 ```
 pnpm install                                   # workspace install
-pnpm typecheck                                 # api + worker + shared + anchoring + anchoring-contract — 0 errors
-pnpm lint                                      # same five — 0 errors/warnings
+pnpm typecheck                                 # api + worker + web + shared + anchoring + anchoring-contract — 0 errors, verified Sprint 19
+pnpm lint                                      # api + worker + shared + anchoring + anchoring-contract (not web) — 0 errors/warnings
 pnpm --filter @sourceit/shared db:migrate      # applies all 9 migrations (0000–0008) for real — verified
 pnpm --filter @sourceit/shared seed            # verified (2 articles, 2 saved, 2 follows, 1 redaction, 6 credibility points)
 pnpm --filter @sourceit/anchoring test          # 33/33 — verified
@@ -508,7 +535,9 @@ TEST_DATABASE_URL=<url> pnpm --filter @sourceit/worker exec vitest run --no-file
 pnpm --filter @sourceit/shared openapi:generate && pnpm --filter @sourceit/shared client:generate  # regenerated, not hand-edited
 pnpm dev                                        # runs apps/api + apps/worker in parallel; both need ../../.env
 pnpm --filter @sourceit/web dev                # needs apps/web/.env.local (VITE_CLERK_PUBLISHABLE_KEY, VITE_API_BASE_URL)
-pnpm --filter @sourceit/web build              # 2204 modules — verified
+pnpm --filter @sourceit/web build              # 2208 modules — verified Sprint 19
+pnpm --filter @sourceit/web typecheck          # 0 errors — verified Sprint 19
+pnpm --filter @sourceit/web test               # 23/23 — verified Sprint 19 (no backend needed)
 ```
 
 `.env` for `pnpm dev`: `DATABASE_URL`, `CLERK_SECRET_KEY`,
